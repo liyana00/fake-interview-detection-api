@@ -5,6 +5,7 @@ from .behavior_analysis import analyze_behavior
 from .lip_sync import analyze_lip_sync
 from .suspicious import calculate_suspicious_score
 from .decision_engine import update_history, make_decision
+from .models import InterviewSession, DetectionLog, UserRegister
 
 running = False
 
@@ -31,11 +32,26 @@ def start_camera():
     for _ in range(5):
         cap.read()
 
+    # ✅ MediaPipe
     mp_face = mp.solutions.face_detection
     face_detection = mp_face.FaceDetection(
         model_selection=0,
         min_detection_confidence=0.5
     )
+
+    # ===============================
+    # ✅ CREATE SESSION (ONLY ONCE)
+    # ===============================
+    user = UserRegister.objects.first()
+
+    if not user:
+        print("❌ No user found. Register first.")
+        running = False
+        return
+
+    session = InterviewSession.objects.create(user=user)
+
+    # ===============================
 
     while running:
         ret, frame = cap.read()
@@ -65,13 +81,23 @@ def start_camera():
         final_status = make_decision(score)
 
         # ===============================
-        # ✅ UI DISPLAY (CORRECT PLACE)
+        # ✅ SAVE TO DATABASE (EVERY FRAME)
+        # ===============================
+        DetectionLog.objects.create(
+            session=session,
+            face_count=face_count,
+            behavior=behavior,
+            lip_status=lip,
+            score=score,
+            final_status=final_status
+        )
         # ===============================
 
-        # 🔲 Background box
+        # ===============================
+        # ✅ UI DISPLAY
+        # ===============================
         cv2.rectangle(frame, (5, 5), (420, 190), (0, 0, 0), -1)
 
-        # Info text
         cv2.putText(frame, f"Faces: {face_count}", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
@@ -90,10 +116,8 @@ def start_camera():
         else:
             color = (0, 0, 255)
 
-        # 🔥 FINAL OUTPUT (BIG + CLEAR)
         cv2.putText(frame, f"FINAL: {final_status}", (10, 160),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 3)
-
         # ===============================
 
         cv2.imshow("Interview Monitoring", frame)
@@ -107,6 +131,7 @@ def start_camera():
             print("Camera stopped by Q")
             break
 
+    # ✅ Cleanup
     cap.release()
     cv2.destroyAllWindows()
     running = False
